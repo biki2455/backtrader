@@ -1,0 +1,45 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import yfinance as yf
+
+# Load data
+symbol = 'EURUSD=X'  # You can change this
+df = yf.download(symbol, interval='5m', period='7d')
+
+# Calculate indicators
+df['EMA_8'] = df['Close'].ewm(span=8, adjust=False).mean()
+df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+
+# Supertrend calculation
+def supertrend(df, period=10, multiplier=3):
+    hl2 = (df['High'] + df['Low']) / 2
+    atr = hl2.rolling(window=period).mean()
+    upper_band = hl2 + (multiplier * atr)
+    lower_band = hl2 - (multiplier * atr)
+    st = pd.Series(np.where(df['Close'] > upper_band, lower_band, upper_band))
+    return st
+
+df['Supertrend'] = supertrend(df)
+
+# Stochastic RSI calculation
+df['RSI'] = 100 - (100 / (1 + df['Close'].pct_change().rolling(14).mean() / df['Close'].pct_change().rolling(14).std()))
+df['StochRSI'] = (df['RSI'] - df['RSI'].rolling(3).min()) / (df['RSI'].rolling(3).max() - df['RSI'].rolling(3).min())
+
+# Volume spike detection
+df['Volume_Spike'] = df['Volume'] > df['Volume'].rolling(window=20).mean() * 1.5
+
+# Entry conditions
+df['Buy_Signal'] = (df['EMA_8'] > df['EMA_21']) & (df['Close'] > df['Supertrend']) & (df['StochRSI'] < 0.2) & (df['Volume_Spike'])
+df['Sell_Signal'] = (df['EMA_8'] < df['EMA_21']) & (df['Close'] < df['Supertrend']) & (df['StochRSI'] > 0.8) & (df['Volume_Spike'])
+
+# Plotting
+plt.figure(figsize=(12,8))
+plt.plot(df['Close'], label='Close Price', color='blue')
+plt.plot(df['EMA_8'], label='EMA 8', color='red', linestyle='--')
+plt.plot(df['EMA_21'], label='EMA 21', color='green', linestyle='--')
+plt.scatter(df.index, df[df['Buy_Signal']]['Close'], marker='^', color='green', label='Buy Signal')
+plt.scatter(df.index, df[df['Sell_Signal']]['Close'], marker='v', color='red', label='Sell Signal')
+plt.title('5-Minute Scalping Strategy')
+plt.legend()
+plt.show()
